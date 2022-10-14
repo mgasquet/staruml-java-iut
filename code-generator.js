@@ -26,41 +26,6 @@ const path = require('path')
 const codegen = require('./codegen-utils')
 
 /**
- * Return element's full path including parent's classes or interfaces
- * @param {type.Model} elem
- * @param {Array.<String>} imports Used to collect import declarations
- * @return {string}
- */
-function getElemPath (elem, imports, curPackage) {
-  // find package of elem and whole _type string with parents' decarations
-  var owner = elem._parent
-  var _name = elem.name
-  while (owner instanceof type.UMLClass || owner instanceof type.UMLInterface) {
-    if (owner.name.length > 0) {
-      _name = owner.name +'.'+ _name
-    } else {
-      _name = '.'+ _name
-    }
-    elem = owner
-    owner = owner._parent
-  }
-
-  // generate _import as fullpath of owner package
-  var _fullImport = elem.name
-  var _import = ''
-  if (owner != null && owner != curPackage) {
-    while (owner instanceof type.UMLPackage) {
-      _import = _fullImport //ignore final root package that would be view point
-      _fullImport = owner.name + '.' + _fullImport
-      owner = owner._parent
-    }
-    imports.add(_import)
-  }
-
-  return _name
-}
-
-/**
  * Java Code Generator
  */
 class JavaCodeGenerator {
@@ -103,14 +68,10 @@ class JavaCodeGenerator {
    * @param {type.Model} elem
    * @param {string} basePath
    * @param {Object} options
-   * @param {Object} curPackage
    */
-  generate (elem, basePath, options, curPackage) {
+  generate (elem, basePath, options) {
     var fullPath
     var codeWriter
-    var codeWriter2
-
-    var imports = new Set()
 
     // Package
     if (elem instanceof type.UMLPackage) {
@@ -118,7 +79,7 @@ class JavaCodeGenerator {
       fs.mkdirSync(fullPath)
       if (Array.isArray(elem.ownedElements)) {
         elem.ownedElements.forEach(child => {
-          return this.generate(child, fullPath, options, elem)
+          return this.generate(child, fullPath, options)
         })
       }
     } else if (elem instanceof type.UMLClass) {
@@ -126,78 +87,43 @@ class JavaCodeGenerator {
       if (elem.stereotype === 'annotationType') {
         fullPath = path.join(basePath, elem.name + '.java')
         codeWriter = new codegen.CodeWriter(this.getIndentString(options))
-        this.writePackageDeclaration(codeWriter, elem, options, imports, curPackage)
-        
-        codeWriter2 = new codegen.CodeWriter(this.getIndentString(options))
-        this.writeAnnotationType(codeWriter2, elem, options, imports, curPackage)
-
-        if (imports.size > 0) {
-          codeWriter.writeLine()
-          imports.forEach(function(v,i,s) {codeWriter.writeLine('import ' + v + ';')})
-        }
+        this.writePackageDeclaration(codeWriter, elem, options)
         codeWriter.writeLine()
-        codeWriter.writeLine('import java.io.*;')
         codeWriter.writeLine('import java.util.*;')
-        codeWriter.writeLine('\n')
-
-        fs.writeFileSync(fullPath, codeWriter.getData() + codeWriter2.getData())
+        codeWriter.writeLine()
+        this.writeAnnotationType(codeWriter, elem, options)
+        fs.writeFileSync(fullPath, codeWriter.getData())
       // Class
       } else {
         fullPath = basePath + '/' + elem.name + '.java'
         codeWriter = new codegen.CodeWriter(this.getIndentString(options))
-        this.writePackageDeclaration(codeWriter, elem, options, imports, curPackage)
-
-        codeWriter2 = new codegen.CodeWriter(this.getIndentString(options))
-        this.writeClass(codeWriter2, elem, options, imports, curPackage)
-        
-        if (imports.size > 0) {
-          codeWriter.writeLine()
-          imports.forEach(function(v,i,s) {codeWriter.writeLine('import ' + v + ';')})
-        }
+        this.writePackageDeclaration(codeWriter, elem, options)
         codeWriter.writeLine()
-        codeWriter.writeLine('import java.io.*;')
         codeWriter.writeLine('import java.util.*;')
-        codeWriter.writeLine('\n')
-
-        fs.writeFileSync(fullPath, codeWriter.getData() + codeWriter2.getData())
+        codeWriter.writeLine()
+        this.writeClass(codeWriter, elem, options)
+        fs.writeFileSync(fullPath, codeWriter.getData())
       }
 
     // Interface
     } else if (elem instanceof type.UMLInterface) {
       fullPath = basePath + '/' + elem.name + '.java'
       codeWriter = new codegen.CodeWriter(this.getIndentString(options))
-      this.writePackageDeclaration(codeWriter, elem, options, imports, curPackage)
-      
-      codeWriter2 = new codegen.CodeWriter(this.getIndentString(options))
-      this.writeInterface(codeWriter2, elem, options, imports, curPackage)
-      
-      if (imports.size > 0) {
-        codeWriter.writeLine()
-        imports.forEach(function(v,i,s) {codeWriter.writeLine('import ' + v + ';')})
-      }
+      this.writePackageDeclaration(codeWriter, elem, options)
       codeWriter.writeLine()
-      codeWriter.writeLine('import java.io.*;')
       codeWriter.writeLine('import java.util.*;')
-      codeWriter.writeLine('\n')
-
-      fs.writeFileSync(fullPath, codeWriter.getData() + codeWriter2.getData())
+      codeWriter.writeLine()
+      this.writeInterface(codeWriter, elem, options)
+      fs.writeFileSync(fullPath, codeWriter.getData())
 
     // Enum
     } else if (elem instanceof type.UMLEnumeration) {
       fullPath = basePath + '/' + elem.name + '.java'
       codeWriter = new codegen.CodeWriter(this.getIndentString(options))
-      this.writePackageDeclaration(codeWriter, elem, options, imports, curPackage)
-
-      codeWriter2 = new codegen.CodeWriter(this.getIndentString(options))
-      this.writeEnum(codeWriter2, elem, options, imports, curPackage)
-      
-      if (imports.size > 0) {
-        codeWriter.writeLine()
-        imports.forEach(function(v,i,s) {codeWriter.writeLine('import ' + v + ';')})
-      }
-      codeWriter.writeLine('\n')
-
-      fs.writeFileSync(fullPath, codeWriter.getData() + codeWriter2.getData())
+      this.writePackageDeclaration(codeWriter, elem, options)
+      codeWriter.writeLine()
+      this.writeEnum(codeWriter, elem, options)
+      fs.writeFileSync(fullPath, codeWriter.getData())
     }
   }
 
@@ -266,82 +192,35 @@ class JavaCodeGenerator {
    * @return {Array.<type.Model>}
    */
   getSuperInterfaces (elem) {
-    if (elem instanceof type.UMLClass) {
-      var realizations = app.repository.getRelationshipsOf(elem, function (rel) {
-        return (rel instanceof type.UMLInterfaceRealization && rel.source === elem)
-      })
-      return realizations.map(function (gen) { return gen.target })
-    } else {
-      return this.getSuperClasses(elem)
-    }
+    var realizations = app.repository.getRelationshipsOf(elem, function (rel) {
+      return (rel instanceof type.UMLInterfaceRealization && rel.source === elem)
+    })
+    return realizations.map(function (gen) { return gen.target })
   }
 
-  /**
-   * Collect all super classes to allExtends Array
-   * @param {type.Model} elem
-   * @param {Set.<UMLClass>} allExtendsSet Used to avoid repeated elements in allExtends array
-   * @param {Array.<UMLClass>} allExtends Used to collect super classes in order
-   */
-  collectExtends (elem, allExtendsSet, allExtends) {
-    var _exts = this.getSuperClasses(elem)
-    for (var i = 0; i < _exts.length; i++) {
-      var _ext = _exts[i]
-      this.collectExtends(_ext, allExtendsSet, allExtends)
-      if (!allExtendsSet.has(_ext)) {
-        allExtendsSet.add(_ext)
-        allExtends.push(_ext)
-      }
-    }
-  }
-
-  /**
-   * Collect all super interfaces to allImplements Array
-   * @param {type.Model} elem
-   * @param {Set.<UMLInterface>} allImplementsSet Used to avoid repeated elements in allImplements array
-   * @param {Array.<UMLInterface>} allImplements Used to collect super interfaces in order
-   */
-  collectImplements (elem, allImplementsSet, allImplements) {
-    var _impls = this.getSuperInterfaces(elem)
-    for (var i = 0; i < _impls.length; i++) {
-      var _impl = _impls[i]
-      this.collectImplements(_impl, allImplementsSet, allImplements)
-      if (!allImplementsSet.has(_impl)) {
-        allImplementsSet.add(_impl)
-        allImplements.push(_impl)
-      }
-    }
-  }
-  
   /**
    * Return type expression
    * @param {type.Model} elem
-   * @param {Array.<String>} imports Used to collect import declarations
    * @return {string}
    */
-  getType (elem, imports, curPackage) {
+  getType (elem) {
     var _type = 'void'
-    var typeElem = null
-    
     // type name
     if (elem instanceof type.UMLAssociationEnd) {
       if (elem.reference instanceof type.UMLModelElement && elem.reference.name.length > 0) {
-        typeElem = elem.reference
-        // inner types need add owner's name as prefix
-        _type = getElemPath(typeElem, imports, curPackage)
-      }      
+        _type = elem.reference.name
+      }
     } else {
-      if (elem.type instanceof type.UMLModelElement && elem.type.name.length > 0) {        
-        typeElem = elem.type
-        // inner types need add owner's name as prefix
-        _type = getElemPath(typeElem, imports, curPackage)
+      if (elem.type instanceof type.UMLModelElement && elem.type.name.length > 0) {
+        _type = elem.type.name
       } else if ((typeof elem.type === 'string') && elem.type.length > 0) {
         _type = elem.type
       }
     }
-    
     // multiplicity
     if (elem.multiplicity) {
-      if (['0..*', '1..*', '*'].includes(elem.multiplicity.trim())) {
+	  var trimedMultiplicity = elem.multiplicity.trim();
+      if (['0..*', '1..*', '*'].includes(trimedMultiplicity) || trimedMultiplicity.match(/[0-9]+[\.]{2}\*$/)) {
         if (elem.isOrdered === true) {
           _type = 'List<' + _type + '>'
         } else {
@@ -359,10 +238,8 @@ class JavaCodeGenerator {
    * @param {StringWriter} codeWriter
    * @param {string} text
    * @param {Object} options
-   * @param {Set.<String>} imports
-   * @param {Object} curPackage
    */
-  writeDoc (codeWriter, text, options, imports, curPackage) {
+  writeDoc (codeWriter, text, options) {
     var i, len, lines
     if (options.javaDoc && (typeof text === 'string')) {
       lines = text.trim().split('\n')
@@ -379,10 +256,8 @@ class JavaCodeGenerator {
    * @param {StringWriter} codeWriter
    * @param {type.Model} elem
    * @param {Object} options
-   * @param {Set.<String>} imports
-   * @param {Object} curPackage
    */
-  writePackageDeclaration (codeWriter, elem, options, imports, curPackage) {
+  writePackageDeclaration (codeWriter, elem, options) {
     var packagePath = null
     if (elem._parent) {
       packagePath = elem._parent.getPath(this.baseModel).map(function (e) { return e.name }).join('.')
@@ -398,11 +273,11 @@ class JavaCodeGenerator {
    * @param {type.Model} elem
    * @param {Object} options
    */
-  writeConstructor (codeWriter, elem, options, imports, curPackage) {
+  writeConstructor (codeWriter, elem, options) {
     if (elem.name.length > 0) {
       var terms = []
       // Doc
-      this.writeDoc(codeWriter, 'Default constructor', options, imports, curPackage)
+      this.writeDoc(codeWriter, 'Default constructor', options)
       // Visibility
       var visibility = this.getVisibility(elem)
       if (visibility) {
@@ -419,21 +294,19 @@ class JavaCodeGenerator {
    * @param {StringWriter} codeWriter
    * @param {type.Model} elem
    * @param {Object} options
-   * @param {Set.<String>} imports
-   * @param {Object} curPackage
    */
-  writeMemberVariable (codeWriter, elem, options, imports, curPackage) {
+  writeMemberVariable (codeWriter, elem, options) {
     if (elem.name.length > 0) {
       var terms = []
       // doc
-      this.writeDoc(codeWriter, elem.documentation, options, imports, curPackage)
+      this.writeDoc(codeWriter, elem.documentation, options)
       // modifiers
       var _modifiers = this.getModifiers(elem)
       if (_modifiers.length > 0) {
         terms.push(_modifiers.join(' '))
       }
       // type
-      terms.push(this.getType(elem, imports, curPackage))
+      terms.push(this.getType(elem))
       // name
       terms.push(elem.name)
       // initial value
@@ -448,19 +321,16 @@ class JavaCodeGenerator {
    * Write Method
    * @param {StringWriter} codeWriter
    * @param {type.Model} elem
-   * @param {type.Model} owner Who wants to write this method
    * @param {Object} options
    * @param {boolean} skipBody
    * @param {boolean} skipParams
-   * @param {boolean} declaredBy Who declared this method
-   * @param {Set.<String>} imports
-   * @param {Object} curPackage
    */
-  writeMethod (codeWriter, elem, owner, options, skipBody, skipParams, declaredBy, imports, curPackage) {
+  writeMethod (codeWriter, elem, options, skipBody, skipParams) {
     if (elem.name.length > 0) {
       var terms = []
       var params = elem.getNonReturnParameters()
       var returnParam = elem.getReturnParameter()
+	  var isConstructor = elem.stereotype == "create";
 
       // doc
       var doc = elem.documentation.trim()
@@ -478,10 +348,10 @@ class JavaCodeGenerator {
       params.forEach(function (param) {
         doc += '\n@param ' + param.name + ' ' + param.documentation
       })
-      if (returnParam) {
+      if (!isConstructor && returnParam) {
         doc += '\n@return ' + returnParam.documentation
       }
-      this.writeDoc(codeWriter, doc, options, imports, curPackage)
+      this.writeDoc(codeWriter, doc, options)
 
       // modifiers
       var _modifiers = this.getModifiers(elem)
@@ -490,15 +360,13 @@ class JavaCodeGenerator {
       }
 
       // type
-      if (returnParam) {
-        terms.push(this.getType(returnParam, imports, curPackage))
-      } else {
-        if (elem.name === owner.name) {
-          //constructor has no return
-        }else{
-          terms.push('void') 
-        }
-      }
+	  if(!isConstructor) {
+		  if (returnParam) {
+			terms.push(this.getType(returnParam))
+		  } else {
+			terms.push('void')
+		  }		  
+	  }
 
       // name + parameters
       var paramTerms = []
@@ -506,7 +374,7 @@ class JavaCodeGenerator {
         var len
         for (i = 0, len = params.length; i < len; i++) {
           var p = params[i]
-          var s = this.getType(p, imports, curPackage) + ' ' + p.name
+          var s = this.getType(p) + ' ' + p.name
           if (p.isReadOnly === true) {
             s = 'final ' + s
           }
@@ -521,15 +389,11 @@ class JavaCodeGenerator {
       } else {
         codeWriter.writeLine(terms.join(' ') + ' {')
         codeWriter.indent()
-        if (declaredBy === owner) {
-          codeWriter.writeLine('// TODO implement here')
-        } else {
-          codeWriter.writeLine('// TODO implement ' + declaredBy.name + '.' + elem.name + '() here')
-        }
-        
+        codeWriter.writeLine('// TODO implement here')
+
         // return statement
-        if (returnParam) {
-          var returnType = this.getType(returnParam, imports, curPackage)
+        if (!isConstructor && returnParam) {
+          var returnType = this.getType(returnParam)
           if (returnType === 'boolean') {
             codeWriter.writeLine('return false;')
           } else if (returnType === 'int' || returnType === 'long' || returnType === 'short' || returnType === 'byte') {
@@ -558,10 +422,8 @@ class JavaCodeGenerator {
    * @param {StringWriter} codeWriter
    * @param {type.Model} elem
    * @param {Object} options
-   * @param {Set.<String>} imports
-   * @param {Object} curPackage
    */
-  writeClass (codeWriter, elem, options, imports, curPackage) {
+  writeClass (codeWriter, elem, options) {
     var i, len
     var terms = []
 
@@ -570,7 +432,7 @@ class JavaCodeGenerator {
     if (app.project.getProject().author && app.project.getProject().author.length > 0) {
       doc += '\n@author ' + app.project.getProject().author
     }
-    this.writeDoc(codeWriter, doc, options, imports, curPackage)
+    this.writeDoc(codeWriter, doc, options)
 
     // Modifiers
     var _modifiers = this.getModifiers(elem)
@@ -588,26 +450,22 @@ class JavaCodeGenerator {
     // Extends
     var _extends = this.getSuperClasses(elem)
     if (_extends.length > 0) {
-      terms.push('extends ' + getElemPath(_extends[0], imports, curPackage))
+      terms.push('extends ' + _extends[0].name)
     }
 
     // Implements
     var _implements = this.getSuperInterfaces(elem)
     if (_implements.length > 0) {
-      terms.push('implements ' + _implements.map(function (e) {return getElemPath(e, imports, curPackage)}).join(', '))
+      terms.push('implements ' + _implements.map(function (e) { return e.name }).join(', '))
     }
     codeWriter.writeLine(terms.join(' ') + ' {')
     codeWriter.writeLine()
     codeWriter.indent()
 
-    // Constructor
-    this.writeConstructor(codeWriter, elem, options, imports, curPackage)
-    codeWriter.writeLine()
-
     // Member Variables
     // (from attributes)
     for (i = 0, len = elem.attributes.length; i < len; i++) {
-      this.writeMemberVariable(codeWriter, elem.attributes[i], options, imports, curPackage)
+      this.writeMemberVariable(codeWriter, elem.attributes[i], options)
       codeWriter.writeLine()
     }
     // (from associations)
@@ -616,55 +474,54 @@ class JavaCodeGenerator {
     })
     for (i = 0, len = associations.length; i < len; i++) {
       var asso = associations[i]
-      if (asso.end1.reference === elem && asso.end2.navigable === true) {
-        this.writeMemberVariable(codeWriter, asso.end2, options, imports, curPackage)
+      if (asso.end1.reference === elem && asso.end2.navigable != "notNavigable" && asso.end2.name.length > 0) {
+        this.writeMemberVariable(codeWriter, asso.end2, options)
         codeWriter.writeLine()
       }
-      if (asso.end2.reference === elem && asso.end1.navigable === true) {
-        this.writeMemberVariable(codeWriter, asso.end1, options, imports, curPackage)
+      if (asso.end2.reference === elem && asso.end1.navigable != "notNavigable" && asso.end1.name.length > 0) {
+        this.writeMemberVariable(codeWriter, asso.end1, options)
         codeWriter.writeLine()
       }
     }
+	
+	var hasCustomConstructors = false;
+	i = 0;
+	len = elem.operations.length;
+	while(i < len && !hasCustomConstructors) {
+	var operation = elem.operations[i];
+      if(operation.stereotype == "create" && operation.name == elem.name) {
+		  hasCustomConstructors = true;
+	  }
+	  i += 1;
+	}
+
+    // Constructor
+	if(!hasCustomConstructors) {		
+		this.writeConstructor(codeWriter, elem, options)
+		codeWriter.writeLine()
+	}
 
     // Methods
     for (i = 0, len = elem.operations.length; i < len; i++) {
-      this.writeMethod(codeWriter, elem.operations[i], elem, options, false, false, elem, imports, curPackage)
+      this.writeMethod(codeWriter, elem.operations[i], options, false, false)
       codeWriter.writeLine()
     }
-    
+
     // Extends methods
     if (_extends.length > 0) {
       for (i = 0, len = _extends[0].operations.length; i < len; i++) {
-        var _modifiers2 = this.getModifiers(_extends[0].operations[i])
-        if (_modifiers2.includes('abstract') === true) {
-          this.writeMethod(codeWriter, _extends[0].operations[i], elem, options, false, false, _extends[0], imports, curPackage)
+        _modifiers = this.getModifiers(_extends[0].operations[i])
+        if (_modifiers.includes('abstract') === true) {
+          this.writeMethod(codeWriter, _extends[0].operations[i], options, false, false)
           codeWriter.writeLine()
         }
       }
     }
 
-    // Interface methods including all super interfaces
-    var _allExtendsSet = new Set()
-    var _allExtends = new Array()
-    this.collectExtends(elem, _allExtendsSet, _allExtends)
-
-    // collect methods implemented by all extends to _allImplementsSet to be ignored when writeLine
-    var _allImplementsSet = new Set()
-    var _allImplements = new Array()
-    if (_allExtends.length > 0) {
-      for (i = 0, len = _allExtends.length; i < len; i++) {
-        this.collectImplements(_allExtends[i], _allImplementsSet, _allImplements)
-      }
-    }
-
-    // collect valid super interfaces
-    _allImplements.splice(0,_allImplements.length)    
-    this.collectImplements(elem, _allImplementsSet, _allImplements)
-
-    // write methods in valid super interfaces
-    for (var j = 0; j < _allImplements.length; j++) {
-      for (i = 0, len = _allImplements[j].operations.length; i < len; i++) {
-        this.writeMethod(codeWriter, _allImplements[j].operations[i], elem, options, false, false, _allImplements[j], imports, curPackage)
+    // Interface methods
+    for (var j = 0; j < _implements.length; j++) {
+      for (i = 0, len = _implements[j].operations.length; i < len; i++) {
+        this.writeMethod(codeWriter, _implements[j].operations[i], options, false, false)
         codeWriter.writeLine()
       }
     }
@@ -674,16 +531,16 @@ class JavaCodeGenerator {
       var def = elem.ownedElements[i]
       if (def instanceof type.UMLClass) {
         if (def.stereotype === 'annotationType') {
-          this.writeAnnotationType(codeWriter, def, options, imports, curPackage)
+          this.writeAnnotationType(codeWriter, def, options)
         } else {
-          this.writeClass(codeWriter, def, options, imports, curPackage)
+          this.writeClass(codeWriter, def, options)
         }
         codeWriter.writeLine()
       } else if (def instanceof type.UMLInterface) {
-        this.writeInterface(codeWriter, def, options, imports, curPackage)
+        this.writeInterface(codeWriter, def, options)
         codeWriter.writeLine()
       } else if (def instanceof type.UMLEnumeration) {
-        this.writeEnum(codeWriter, def, options, imports, curPackage)
+        this.writeEnum(codeWriter, def, options)
         codeWriter.writeLine()
       }
     }
@@ -697,15 +554,13 @@ class JavaCodeGenerator {
    * @param {StringWriter} codeWriter
    * @param {type.Model} elem
    * @param {Object} options
-   * @param {Set.<String>} imports
-   * @param {Object} curPackage
    */
-  writeInterface (codeWriter, elem, options, imports, curPackage) {
+  writeInterface (codeWriter, elem, options) {
     var i, len
     var terms = []
 
     // Doc
-    this.writeDoc(codeWriter, elem.documentation, options, imports, curPackage)
+    this.writeDoc(codeWriter, elem.documentation, options)
 
     // Modifiers
     var visibility = this.getVisibility(elem)
@@ -720,7 +575,7 @@ class JavaCodeGenerator {
     // Extends
     var _extends = this.getSuperClasses(elem)
     if (_extends.length > 0) {
-      terms.push('extends ' + _extends.map(function (e) { return getElemPath(e, imports, curPackage) }).join(', '))
+      terms.push('extends ' + _extends.map(function (e) { return e.name }).join(', '))
     }
     codeWriter.writeLine(terms.join(' ') + ' {')
     codeWriter.writeLine()
@@ -729,7 +584,7 @@ class JavaCodeGenerator {
     // Member Variables
     // (from attributes)
     for (i = 0, len = elem.attributes.length; i < len; i++) {
-      this.writeMemberVariable(codeWriter, elem.attributes[i], options, imports, curPackage)
+      this.writeMemberVariable(codeWriter, elem.attributes[i], options)
       codeWriter.writeLine()
     }
     // (from associations)
@@ -738,19 +593,19 @@ class JavaCodeGenerator {
     })
     for (i = 0, len = associations.length; i < len; i++) {
       var asso = associations[i]
-      if (asso.end1.reference === elem && asso.end2.navigable === true) {
-        this.writeMemberVariable(codeWriter, asso.end2, options, imports, curPackage)
+      if (asso.end1.reference === elem && asso.end2.navigable != "notNavigable" && asso.end2.name.length > 0) {
+        this.writeMemberVariable(codeWriter, asso.end2, options)
         codeWriter.writeLine()
       }
-      if (asso.end2.reference === elem && asso.end1.navigable === true) {
-        this.writeMemberVariable(codeWriter, asso.end1, options, imports, curPackage)
+      if (asso.end2.reference === elem && asso.end1.navigable != "notNavigable" && asso.end1.name.length > 0) {
+        this.writeMemberVariable(codeWriter, asso.end1, options)
         codeWriter.writeLine()
       }
     }
 
     // Methods
     for (i = 0, len = elem.operations.length; i < len; i++) {
-      this.writeMethod(codeWriter, elem.operations[i], elem, options, true, false, elem, imports, curPackage)
+      this.writeMethod(codeWriter, elem.operations[i], options, true, false)
       codeWriter.writeLine()
     }
 
@@ -759,16 +614,16 @@ class JavaCodeGenerator {
       var def = elem.ownedElements[i]
       if (def instanceof type.UMLClass) {
         if (def.stereotype === 'annotationType') {
-          this.writeAnnotationType(codeWriter, def, options, imports, curPackage)
+          this.writeAnnotationType(codeWriter, def, options)
         } else {
-          this.writeClass(codeWriter, def, options, imports, curPackage)
+          this.writeClass(codeWriter, def, options)
         }
         codeWriter.writeLine()
       } else if (def instanceof type.UMLInterface) {
-        this.writeInterface(codeWriter, def, options, imports, curPackage)
+        this.writeInterface(codeWriter, def, options)
         codeWriter.writeLine()
       } else if (def instanceof type.UMLEnumeration) {
-        this.writeEnum(codeWriter, def, options, imports, curPackage)
+        this.writeEnum(codeWriter, def, options)
         codeWriter.writeLine()
       }
     }
@@ -782,14 +637,12 @@ class JavaCodeGenerator {
    * @param {StringWriter} codeWriter
    * @param {type.Model} elem
    * @param {Object} options
-   * @param {Set.<String>} imports
-   * @param {Object} curPackage
    */
-  writeEnum (codeWriter, elem, options, imports, curPackage) {
+  writeEnum (codeWriter, elem, options) {
     var i, len
     var terms = []
     // Doc
-    this.writeDoc(codeWriter, elem.documentation, options, imports, curPackage)
+    this.writeDoc(codeWriter, elem.documentation, options)
 
     // Modifiers
     var visibility = this.getVisibility(elem)
@@ -817,10 +670,8 @@ class JavaCodeGenerator {
    * @param {StringWriter} codeWriter
    * @param {type.Model} elem
    * @param {Object} options
-   * @param {Set.<String>} imports
-   * @param {Object} curPackage
    */
-  writeAnnotationType (codeWriter, elem, options, imports, curPackage) {
+  writeAnnotationType (codeWriter, elem, options) {
     var i, len
     var terms = []
 
@@ -829,7 +680,7 @@ class JavaCodeGenerator {
     if (app.project.getProject().author && app.project.getProject().author.length > 0) {
       doc += '\n@author ' + app.project.getProject().author
     }
-    this.writeDoc(codeWriter, doc, options, imports, curPackage)
+    this.writeDoc(codeWriter, doc, options)
 
     // Modifiers
     var _modifiers = this.getModifiers(elem)
@@ -850,13 +701,13 @@ class JavaCodeGenerator {
 
     // Member Variables
     for (i = 0, len = elem.attributes.length; i < len; i++) {
-      this.writeMemberVariable(codeWriter, elem.attributes[i], options, imports, curPackage)
+      this.writeMemberVariable(codeWriter, elem.attributes[i], options)
       codeWriter.writeLine()
     }
 
     // Methods
     for (i = 0, len = elem.operations.length; i < len; i++) {
-      this.writeMethod(codeWriter, elem.operations[i], elem, options, true, true, elem, imports, curPackage)
+      this.writeMethod(codeWriter, elem.operations[i], options, true, true)
       codeWriter.writeLine()
     }
 
@@ -866,7 +717,7 @@ class JavaCodeGenerator {
       for (i = 0, len = _extends[0].operations.length; i < len; i++) {
         _modifiers = this.getModifiers(_extends[0].operations[i])
         if (_modifiers.includes('abstract') === true) {
-          this.writeMethod(codeWriter, _extends[0].operations[i], elem, options, false, false, _extends[0], imports, curPackage)
+          this.writeMethod(codeWriter, _extends[0].operations[i], options, false, false)
           codeWriter.writeLine()
         }
       }
@@ -877,16 +728,16 @@ class JavaCodeGenerator {
       var def = elem.ownedElements[i]
       if (def instanceof type.UMLClass) {
         if (def.stereotype === 'annotationType') {
-          this.writeAnnotationType(codeWriter, def, options, imports, curPackage)
+          this.writeAnnotationType(codeWriter, def, options)
         } else {
-          this.writeClass(codeWriter, def, options, imports, curPackage)
+          this.writeClass(codeWriter, def, options)
         }
         codeWriter.writeLine()
       } else if (def instanceof type.UMLInterface) {
-        this.writeInterface(codeWriter, def, options, imports, curPackage)
+        this.writeInterface(codeWriter, def, options)
         codeWriter.writeLine()
       } else if (def instanceof type.UMLEnumeration) {
-        this.writeEnum(codeWriter, def, options, imports, curPackage)
+        this.writeEnum(codeWriter, def, options)
         codeWriter.writeLine()
       }
     }
@@ -904,7 +755,7 @@ class JavaCodeGenerator {
  */
 function generate (baseModel, basePath, options) {
   var javaCodeGenerator = new JavaCodeGenerator(baseModel, basePath)
-  javaCodeGenerator.generate(baseModel, basePath, options, null)
+  javaCodeGenerator.generate(baseModel, basePath, options)
 }
 
 exports.generate = generate
